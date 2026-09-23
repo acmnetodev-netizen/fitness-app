@@ -15,17 +15,38 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ChatBubble } from '@/components/chat/ChatBubble';
 import { ChatComposer } from '@/components/chat/ChatComposer';
+import { GroupModal } from '@/components/chat/GroupModal';
+import { GroupSwitcher } from '@/components/chat/GroupSwitcher';
 import { GymRatsTheme } from '@/constants/GymRatsTheme';
 import { useAuth } from '@/lib/auth/AuthProvider';
-import { fetchMessages, getDisplayName, sendTextMessage, subscribeToMessages } from '@/lib/chat/api';
-import type { ChatMessage } from '@/types/chat';
+import {
+  fetchMessages,
+  fetchMyGroups,
+  getDisplayName,
+  sendImageMessage,
+  sendTextMessage,
+  subscribeToMessages,
+} from '@/lib/chat/api';
+import type { ChatGroup, ChatMessage } from '@/types/chat';
 
 export default function ChatRoomScreen() {
   const { session, signOut } = useAuth();
   const user = session?.user;
+  const [groups, setGroups] = useState<ChatGroup[]>([]);
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const listRef = useRef<FlatList<ChatMessage>>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchMyGroups(user.id)
+      .then(setGroups)
+      .catch((error) => {
+        Alert.alert('Não foi possível carregar os teus grupos', error instanceof Error ? error.message : undefined);
+      });
+  }, [user]);
 
   const appendMessage = useCallback((message: ChatMessage) => {
     setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
@@ -34,9 +55,10 @@ export default function ChatRoomScreen() {
   useEffect(() => {
     if (!user) return;
     const userName = getDisplayName(user);
+    setIsLoading(true);
 
     let isMounted = true;
-    fetchMessages(user.id, userName)
+    fetchMessages(user.id, userName, activeGroupId)
       .then((data) => {
         if (isMounted) setMessages(data);
       })
@@ -47,13 +69,13 @@ export default function ChatRoomScreen() {
         if (isMounted) setIsLoading(false);
       });
 
-    const unsubscribe = subscribeToMessages(user.id, userName, appendMessage);
+    const unsubscribe = subscribeToMessages(user.id, userName, activeGroupId, appendMessage);
 
     return () => {
       isMounted = false;
       unsubscribe();
     };
-  }, [user, appendMessage]);
+  }, [user, activeGroupId, appendMessage]);
 
   const scrollToEnd = useCallback(() => {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
@@ -61,7 +83,7 @@ export default function ChatRoomScreen() {
 
   const handleSendText = async (text: string) => {
     try {
-      await sendTextMessage(text);
+      await sendTextMessage(text, activeGroupId);
       scrollToEnd();
     } catch (error) {
       Alert.alert('Não foi possível enviar a mensagem', error instanceof Error ? error.message : undefined);
@@ -69,12 +91,29 @@ export default function ChatRoomScreen() {
     }
   };
 
+  const handleSendImage = async (localUri: string) => {
+    try {
+      await sendImageMessage(localUri, activeGroupId);
+      scrollToEnd();
+    } catch (error) {
+      Alert.alert('Não foi possível enviar a foto', error instanceof Error ? error.message : undefined);
+      throw error;
+    }
+  };
+
+  const handleGroupReady = (group: ChatGroup) => {
+    setGroups((prev) => (prev.some((g) => g.id === group.id) ? prev : [...prev, group]));
+    setActiveGroupId(group.id);
+  };
+
+  const activeGroupName = activeGroupId ? groups.find((g) => g.id === activeGroupId)?.name : 'Sala Geral';
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Gym Rats</Text>
-          <Text style={styles.subtitle}>Sala da equipa de treino</Text>
+          <Text style={styles.subtitle}>{activeGroupName ?? 'Sala Geral'}</Text>
         </View>
         <Pressable style={styles.iconButton} onPress={signOut}>
           <SymbolView
@@ -84,6 +123,13 @@ export default function ChatRoomScreen() {
           />
         </Pressable>
       </View>
+
+      <GroupSwitcher
+        groups={groups}
+        activeGroupId={activeGroupId}
+        onSelect={setActiveGroupId}
+        onAddPress={() => setIsGroupModalOpen(true)}
+      />
 
       <KeyboardAvoidingView
         style={styles.flex}
@@ -108,8 +154,17 @@ export default function ChatRoomScreen() {
           />
         )}
 
-        <ChatComposer onSendText={handleSendText} />
+        <ChatComposer onSendText={handleSendText} onSendImage={handleSendImage} />
       </KeyboardAvoidingView>
+
+      {user && (
+        <GroupModal
+          visible={isGroupModalOpen}
+          userId={user.id}
+          onClose={() => setIsGroupModalOpen(false)}
+          onGroupReady={handleGroupReady}
+        />
+      )}
     </SafeAreaView>
   );
 }

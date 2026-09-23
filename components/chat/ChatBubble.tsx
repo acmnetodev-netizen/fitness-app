@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { GymRatsTheme } from '@/constants/GymRatsTheme';
 import type { ChatMessage } from '@/types/chat';
@@ -12,6 +12,9 @@ export function ChatBubble({ message }: { message: ChatMessage }) {
     <View style={[styles.row, message.isMine ? styles.rowMine : styles.rowOther]}>
       <View style={[styles.bubble, message.isMine ? styles.bubbleMine : styles.bubbleOther]}>
         {!message.isMine && <Text style={styles.senderName}>{message.senderName}</Text>}
+        {message.imageUrl && (
+          <Image source={{ uri: message.imageUrl }} style={styles.image} resizeMode="cover" />
+        )}
         {message.content && (
           <Text style={message.isMine ? styles.textMine : styles.textOther}>{message.content}</Text>
         )}
@@ -62,6 +65,11 @@ const styles = StyleSheet.create({
   textOther: {
     color: GymRatsTheme.bubbleOtherText,
     fontSize: 15,
+  },
+  image: {
+    width: 220,
+    height: 220,
+    borderRadius: 12,
   },
   time: {
     fontSize: 10,

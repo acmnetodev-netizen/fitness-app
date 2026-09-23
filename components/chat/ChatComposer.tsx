@@ -1,14 +1,16 @@
+import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 
 import { GymRatsTheme } from '@/constants/GymRatsTheme';
 
 type Props = {
   onSendText: (text: string) => Promise<void>;
+  onSendImage: (localUri: string) => Promise<void>;
 };
 
-export function ChatComposer({ onSendText }: Props) {
+export function ChatComposer({ onSendText, onSendImage }: Props) {
   const [text, setText] = useState('');
   const [isSending, setIsSending] = useState(false);
 
@@ -26,8 +28,47 @@ export function ChatComposer({ onSendText }: Props) {
     }
   };
 
+  const handleAttach = () => {
+    if (isSending) return;
+    Alert.alert('Enviar foto', 'Escolhe a origem da imagem', [
+      { text: 'Câmara', onPress: () => pickImage('camera') },
+      { text: 'Galeria', onPress: () => pickImage('library') },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
+  };
+
+  const pickImage = async (source: 'camera' | 'library') => {
+    const permission =
+      source === 'camera'
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) return;
+
+    const result =
+      source === 'camera'
+        ? await ImagePicker.launchCameraAsync({ quality: 0.7 })
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
+    if (result.canceled || !result.assets[0]) return;
+
+    setIsSending(true);
+    try {
+      await onSendImage(result.assets[0].uri);
+    } catch {
+      // The caller already surfaced an alert.
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
+      <Pressable style={styles.attachButton} disabled={isSending} onPress={handleAttach}>
+        <SymbolView
+          name={{ ios: 'paperclip', android: 'attach_file', web: 'attach_file' }}
+          tintColor={GymRatsTheme.textPrimary}
+          size={20}
+        />
+      </Pressable>
       <TextInput
         style={styles.input}
         value={text}
@@ -65,6 +106,14 @@ const styles = StyleSheet.create({
     backgroundColor: GymRatsTheme.surface,
     borderTopWidth: 1,
     borderTopColor: GymRatsTheme.border,
+  },
+  attachButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: GymRatsTheme.surfaceAlt,
   },
   input: {
     flex: 1,
