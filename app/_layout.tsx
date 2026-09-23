@@ -59,6 +59,7 @@ function RootLayoutNav() {
 
         <Stack.Protected guard={!session}>
           <Stack.Screen name="sign-in" />
+          <Stack.Screen name="forgot-password" options={{ presentation: 'modal' }} />
         </Stack.Protected>
       </Stack>
     </ThemeProvider>

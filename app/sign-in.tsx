@@ -1,118 +1,242 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text } from 'react-native';
-import { SymbolView } from 'expo-symbols';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Text as ThemedText, View } from '@/components/Themed';
+import { GymRatsTheme } from '@/constants/GymRatsTheme';
 import { useAuth } from '@/lib/auth/AuthProvider';
 
-type Provider = 'google' | 'apple';
+type Mode = 'signIn' | 'signUp';
 
 export default function SignInScreen() {
-  const { signInWithGoogle, signInWithApple } = useAuth();
-  const [pendingProvider, setPendingProvider] = useState<Provider | null>(null);
+  const { signIn, signUp } = useAuth();
+  const [mode, setMode] = useState<Mode>('signIn');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSignIn = async (provider: Provider) => {
-    setPendingProvider(provider);
+  const handleSubmit = async () => {
+    if (!email.trim() || !password) {
+      Alert.alert('Faltam dados', 'Preenche o email e a palavra-passe.');
+      return;
+    }
+    if (mode === 'signUp' && !name.trim()) {
+      Alert.alert('Faltam dados', 'Preenche o teu nome.');
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
-      await (provider === 'google' ? signInWithGoogle() : signInWithApple());
+      if (mode === 'signIn') {
+        await signIn(email.trim(), password);
+      } else {
+        const { needsEmailConfirmation } = await signUp(name.trim(), email.trim(), password);
+        if (needsEmailConfirmation) {
+          Alert.alert(
+            'Confirma o teu email',
+            'Enviámos um link de confirmação para o teu email. Confirma para poderes entrar.'
+          );
+          setMode('signIn');
+        }
+      }
     } catch (error) {
-      Alert.alert('Não foi possível iniciar sessão', error instanceof Error ? error.message : undefined);
+      Alert.alert('Não foi possível continuar', error instanceof Error ? error.message : undefined);
     } finally {
-      setPendingProvider(null);
+      setIsSubmitting(false);
     }
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.hero}>
-        <ThemedText style={styles.title}>Gym Rats</ThemedText>
-        <ThemedText style={styles.subtitle}>Treina, come e conversa com a tua equipa.</ThemedText>
-      </View>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <View style={styles.hero}>
+            <Text style={styles.title}>Gym Rats</Text>
+            <Text style={styles.subtitle}>Treina, come e conversa com a tua equipa.</Text>
+          </View>
 
-      <View style={styles.buttons} lightColor="transparent" darkColor="transparent">
-        <Pressable
-          style={[styles.button, styles.googleButton]}
-          disabled={pendingProvider !== null}
-          onPress={() => handleSignIn('google')}>
-          {pendingProvider === 'google' ? (
-            <ActivityIndicator color="#1F1F1F" />
-          ) : (
-            <>
-              <SymbolView name={{ ios: 'g.circle.fill', android: 'g_mobiledata', web: 'g_mobiledata' }} size={20} />
-              <Text style={styles.googleButtonText}>Continuar com Google</Text>
-            </>
-          )}
-        </Pressable>
+          <View style={styles.toggle}>
+            <Pressable
+              style={[styles.toggleButton, mode === 'signIn' && styles.toggleButtonActive]}
+              onPress={() => setMode('signIn')}>
+              <Text style={[styles.toggleText, mode === 'signIn' && styles.toggleTextActive]}>
+                Iniciar Sessão
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.toggleButton, mode === 'signUp' && styles.toggleButtonActive]}
+              onPress={() => setMode('signUp')}>
+              <Text style={[styles.toggleText, mode === 'signUp' && styles.toggleTextActive]}>
+                Criar Conta
+              </Text>
+            </Pressable>
+          </View>
 
-        <Pressable
-          style={[styles.button, styles.appleButton]}
-          disabled={pendingProvider !== null}
-          onPress={() => handleSignIn('apple')}>
-          {pendingProvider === 'apple' ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <>
-              <SymbolView
-                name={{ ios: 'apple.logo' }}
-                fallback={null}
-                tintColor="#FFFFFF"
-                size={20}
+          <View style={styles.form}>
+            {mode === 'signUp' && (
+              <View style={styles.field}>
+                <Text style={styles.label}>Nome</Text>
+                <TextInput
+                  style={styles.input}
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="O teu nome"
+                  placeholderTextColor={GymRatsTheme.textSecondary}
+                  autoCapitalize="words"
+                />
+              </View>
+            )}
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Email</Text>
+              <TextInput
+                style={styles.input}
+                value={email}
+                onChangeText={setEmail}
+                placeholder="tu@exemplo.com"
+                placeholderTextColor={GymRatsTheme.textSecondary}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
               />
-              <Text style={styles.appleButtonText}>Continuar com Apple</Text>
-            </>
-          )}
-        </Pressable>
-      </View>
-    </View>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Palavra-passe</Text>
+              <TextInput
+                style={styles.input}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="••••••••"
+                placeholderTextColor={GymRatsTheme.textSecondary}
+                secureTextEntry
+              />
+            </View>
+
+            {mode === 'signIn' && (
+              <Pressable onPress={() => router.push('/forgot-password')}>
+                <Text style={styles.forgotLink}>Esqueceu-se da palavra-passe?</Text>
+              </Pressable>
+            )}
+          </View>
+
+          <Pressable style={styles.submitButton} disabled={isSubmitting} onPress={handleSubmit}>
+            {isSubmitting ? (
+              <ActivityIndicator color={GymRatsTheme.background} />
+            ) : (
+              <Text style={styles.submitButtonText}>
+                {mode === 'signIn' ? 'Entrar' : 'Criar Conta'}
+              </Text>
+            )}
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'space-between',
+    backgroundColor: GymRatsTheme.background,
+  },
+  flex: {
+    flex: 1,
+  },
+  content: {
+    flexGrow: 1,
+    justifyContent: 'center',
     paddingHorizontal: 24,
-    paddingVertical: 64,
+    paddingVertical: 48,
+    gap: 28,
   },
   hero: {
-    marginTop: 48,
+    gap: 8,
   },
   title: {
+    color: GymRatsTheme.textPrimary,
     fontSize: 34,
     fontWeight: '800',
   },
   subtitle: {
-    marginTop: 8,
+    color: GymRatsTheme.textSecondary,
     fontSize: 16,
-    opacity: 0.7,
   },
-  buttons: {
-    gap: 12,
-  },
-  button: {
+  toggle: {
     flexDirection: 'row',
+    backgroundColor: GymRatsTheme.surface,
+    borderRadius: 14,
+    padding: 4,
+  },
+  toggleButton: {
+    flex: 1,
+    height: 40,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    height: 52,
+  },
+  toggleButtonActive: {
+    backgroundColor: GymRatsTheme.accent,
+  },
+  toggleText: {
+    color: GymRatsTheme.textSecondary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  toggleTextActive: {
+    color: GymRatsTheme.background,
+  },
+  form: {
+    gap: 16,
+  },
+  field: {
+    gap: 6,
+  },
+  label: {
+    color: GymRatsTheme.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  input: {
+    backgroundColor: GymRatsTheme.surface,
     borderRadius: 12,
-  },
-  googleButton: {
-    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#DADCE0',
+    borderColor: GymRatsTheme.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: GymRatsTheme.textPrimary,
+    fontSize: 15,
   },
-  googleButtonText: {
-    color: '#1F1F1F',
-    fontSize: 16,
+  forgotLink: {
+    color: GymRatsTheme.accent,
+    fontSize: 13,
     fontWeight: '600',
+    textAlign: 'right',
   },
-  appleButton: {
-    backgroundColor: '#000000',
+  submitButton: {
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: GymRatsTheme.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  appleButtonText: {
-    color: '#FFFFFF',
+  submitButtonText: {
+    color: GymRatsTheme.background,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '800',
   },
 });
