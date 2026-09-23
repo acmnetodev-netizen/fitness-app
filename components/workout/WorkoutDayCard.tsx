@@ -1,20 +1,36 @@
+import { SymbolView } from 'expo-symbols';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { CircularProgress } from '@/components/workout/CircularProgress';
 import { WorkoutTheme } from '@/constants/WorkoutTheme';
-import type { WorkoutDay } from '@/types/workout';
+import type { WorkoutRoutine } from '@/types/workout';
 
-export function WorkoutDayCard({ day, onPress }: { day: WorkoutDay; onPress: () => void }) {
+type Props = {
+  routine: WorkoutRoutine;
+  progress: number;
+  isCompleted: boolean;
+  onPress: () => void;
+};
+
+export function WorkoutDayCard({ routine, progress, isCompleted, onPress }: Props) {
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}>
       <View style={styles.body}>
-        <Text style={styles.dayLabel}>{day.dayNumber}º dia de treino</Text>
-        <Text style={styles.title}>{day.title}</Text>
-        <Text style={styles.exerciseCount}>{day.exercises.length} exercícios</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>{routine.name}</Text>
+          {isCompleted && (
+            <SymbolView
+              name={{ ios: 'checkmark.seal.fill', android: 'verified', web: 'verified' }}
+              tintColor={WorkoutTheme.accent}
+              size={16}
+            />
+          )}
+        </View>
+        <Text style={styles.exerciseCount}>{routine.exercises.length} exercícios</Text>
       </View>
-      <CircularProgress progress={day.progress} />
+      <CircularProgress progress={progress} />
     </Pressable>
   );
 }
@@ -38,12 +54,10 @@ const styles = StyleSheet.create({
     gap: 2,
     marginRight: 12,
   },
-  dayLabel: {
-    color: WorkoutTheme.accent,
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   title: {
     color: WorkoutTheme.textPrimary,

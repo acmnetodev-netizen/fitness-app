@@ -1,33 +1,34 @@
 import { SymbolView } from 'expo-symbols';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { WorkoutTheme } from '@/constants/WorkoutTheme';
-import type { Exercise } from '@/types/workout';
+import type { ExerciseDefinition, RoutineExercise } from '@/types/workout';
 
-const MUSCLE_GROUP_LABEL: Record<Exercise['muscleGroup'], string> = {
-  costas: 'Costas',
-  peito: 'Peito',
-  triceps: 'Tríceps',
-  biceps: 'Bíceps',
-  ombro: 'Ombro',
+type Props = {
+  exercise: ExerciseDefinition;
+  routineExercise: RoutineExercise;
+  isDone: boolean;
+  onToggle: () => void;
 };
 
-export function ExerciseListItem({ exercise, index }: { exercise: Exercise; index: number }) {
+export function ExerciseListItem({ exercise, routineExercise, isDone, onToggle }: Props) {
+  const loadLabel = routineExercise.load > 0 ? `${routineExercise.load}kg` : 'peso corporal';
+
   return (
-    <View style={styles.row}>
-      <View style={styles.iconContainer}>
-        <SymbolView
-          name={{ ios: 'dumbbell.fill', android: 'fitness_center', web: 'fitness_center' }}
-          tintColor={WorkoutTheme.accent}
-          size={22}
-        />
+    <Pressable style={styles.row} onPress={onToggle}>
+      <View style={[styles.checkbox, isDone && styles.checkboxDone]}>
+        {isDone && (
+          <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} tintColor={WorkoutTheme.accentText} size={16} />
+        )}
       </View>
       <View style={styles.body}>
-        <Text style={styles.muscleGroup}>{MUSCLE_GROUP_LABEL[exercise.muscleGroup]}</Text>
-        <Text style={styles.name}>{exercise.name}</Text>
+        <Text style={styles.muscleGroup}>{exercise.muscleGroup}</Text>
+        <Text style={[styles.name, isDone && styles.nameDone]}>{exercise.name}</Text>
+        <Text style={styles.detail}>
+          {routineExercise.sets}x{routineExercise.reps} · {loadLabel}
+        </Text>
       </View>
-      <Text style={styles.index}>{index + 1}</Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -42,13 +43,18 @@ const styles = StyleSheet.create({
     borderColor: WorkoutTheme.border,
     padding: 14,
   },
-  iconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: WorkoutTheme.surfaceAlt,
+  checkbox: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 2,
+    borderColor: WorkoutTheme.border,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  checkboxDone: {
+    backgroundColor: WorkoutTheme.accent,
+    borderColor: WorkoutTheme.accent,
   },
   body: {
     flex: 1,
@@ -66,9 +72,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  index: {
+  nameDone: {
+    color: WorkoutTheme.textSecondary,
+    textDecorationLine: 'line-through',
+  },
+  detail: {
     color: WorkoutTheme.textSecondary,
     fontSize: 13,
-    fontWeight: '600',
   },
 });

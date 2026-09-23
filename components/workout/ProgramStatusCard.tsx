@@ -3,9 +3,13 @@ import { SymbolView } from 'expo-symbols';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { WorkoutTheme } from '@/constants/WorkoutTheme';
-import type { ProgramStatus } from '@/types/workout';
 
-export function ProgramStatusCard({ status }: { status: ProgramStatus }) {
+type Props = {
+  programName: string;
+  completedWorkouts: number;
+};
+
+export function ProgramStatusCard({ programName, completedWorkouts }: Props) {
   return (
     <LinearGradient
       colors={['#123F3A', WorkoutTheme.background]}
@@ -19,8 +23,8 @@ export function ProgramStatusCard({ status }: { status: ProgramStatus }) {
           size={96}
         />
       </View>
-      <Text style={styles.label}>{status.programName}</Text>
-      <Text style={styles.value}>{status.completedWorkouts}</Text>
+      <Text style={styles.label}>{programName}</Text>
+      <Text style={styles.value}>{completedWorkouts}</Text>
       <Text style={styles.caption}>treinos realizados</Text>
     </LinearGradient>
   );

@@ -3,9 +3,14 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { WorkoutTheme } from '@/constants/WorkoutTheme';
-import type { WeeklyScheduleEntry } from '@/types/workout';
+import type { ScheduleDayEntry } from '@/lib/workout/schedule';
 
-export function WeeklySchedule({ entries }: { entries: WeeklyScheduleEntry[] }) {
+type Props = {
+  entries: ScheduleDayEntry[];
+  onSelectRoutine: (routineId: string) => void;
+};
+
+export function WeeklySchedule({ entries, onSelectRoutine }: Props) {
   const [isExpanded, setIsExpanded] = useState(true);
 
   return (
@@ -25,15 +30,39 @@ export function WeeklySchedule({ entries }: { entries: WeeklyScheduleEntry[] }) 
 
       {isExpanded && (
         <View style={styles.list}>
-          {entries.map((entry) => (
-            <View key={entry.day} style={styles.row}>
-              <View style={[styles.dot, entry.isRestDay ? styles.dotRest : styles.dotActive]} />
-              <Text style={styles.dayText}>{entry.day}</Text>
-              <Text style={[styles.labelText, entry.isRestDay && styles.labelTextRest]}>
-                {entry.label}
-              </Text>
-            </View>
-          ))}
+          {entries.map((entry) => {
+            const isRestDay = entry.routines.length === 0;
+            const label = isRestDay
+              ? 'Descanso'
+              : entry.routines.map((r) => r.routine.name).join(' + ');
+            const allCompleted = !isRestDay && entry.routines.every((r) => r.isCompleted);
+
+            return (
+              <Pressable
+                key={entry.weekDay}
+                style={styles.row}
+                disabled={isRestDay}
+                onPress={() => entry.routines[0] && onSelectRoutine(entry.routines[0].routine.id)}>
+                <View
+                  style={[
+                    styles.dot,
+                    isRestDay ? styles.dotRest : allCompleted ? styles.dotCompleted : styles.dotActive,
+                  ]}
+                />
+                <Text style={styles.dayText}>{entry.weekDay}</Text>
+                <Text style={[styles.labelText, isRestDay && styles.labelTextRest]} numberOfLines={1}>
+                  {label}
+                </Text>
+                {allCompleted && (
+                  <SymbolView
+                    name={{ ios: 'checkmark', android: 'check', web: 'check' }}
+                    tintColor={WorkoutTheme.accent}
+                    size={16}
+                  />
+                )}
+              </Pressable>
+            );
+          })}
         </View>
       )}
     </View>
@@ -76,6 +105,9 @@ const styles = StyleSheet.create({
   },
   dotActive: {
     backgroundColor: WorkoutTheme.accent,
+  },
+  dotCompleted: {
+    backgroundColor: '#3DDC84',
   },
   dotRest: {
     backgroundColor: WorkoutTheme.restDay,
