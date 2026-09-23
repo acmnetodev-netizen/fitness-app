@@ -1,15 +1,12 @@
-import { File } from 'expo-file-system';
 import type { User } from '@supabase/supabase-js';
 
 import { supabase } from '@/lib/supabase';
 import type { ChatMessage } from '@/types/chat';
 
-type ChatMessageRow = {
+type MessageRow = {
   id: string;
   user_id: string;
-  user_name: string;
   content: string | null;
-  image_url: string | null;
   created_at: string;
 };
 
@@ -21,67 +18,61 @@ export function getDisplayName(user: User): string {
   return 'Gym Rat';
 }
 
-function mapMessageRow(row: ChatMessageRow, currentUserId: string): ChatMessage {
+/** The table has no user_name column, so other members are labelled from their id. */
+function fallbackName(userId: string): string {
+  return `Gym Rat #${userId.slice(0, 4).toUpperCase()}`;
+}
+
+function mapMessageRow(row: MessageRow, currentUserId: string, currentUserName: string): ChatMessage {
+  const isMine = row.user_id === currentUserId;
   return {
     id: row.id,
     senderId: row.user_id,
-    senderName: row.user_name,
+    senderName: isMine ? currentUserName : fallbackName(row.user_id),
     content: row.content,
-    imageUrl: row.image_url,
     createdAt: row.created_at,
-    isMine: row.user_id === currentUserId,
+    isMine,
   };
 }
 
-export async function fetchMessages(currentUserId: string): Promise<ChatMessage[]> {
+export async function fetchMessages(currentUserId: string, currentUserName: string): Promise<ChatMessage[]> {
   const { data, error } = await supabase
-    .from('chat_messages')
-    .select('id, user_id, user_name, content, image_url, created_at')
+    .from('messages')
+    .select('id, user_id, content, created_at')
     .order('created_at', { ascending: true });
   if (error) throw error;
 
-  return (data ?? []).map((row) => mapMessageRow(row, currentUserId));
+  return (data ?? []).map((row) => mapMessageRow(row, currentUserId, currentUserName));
 }
 
-export async function sendTextMessage(userId: string, userName: string, content: string) {
-  const trimmed = content.trim();
+export async function sendTextMessage(text: string) {
+  const trimmed = text.trim();
   if (!trimmed) return;
-  const { error } = await supabase
-    .from('chat_messages')
-    .insert({ user_id: userId, user_name: userName, content: trimmed });
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  if (!user) throw new Error('Sessão inválida. Inicia sessão novamente.');
+
+  const { error } = await supabase.from('messages').insert({ content: trimmed, user_id: user.id });
   if (error) throw error;
 }
 
-export async function sendImageMessage(userId: string, userName: string, localUri: string) {
-  const file = new File(localUri);
-  const bytes = await file.bytes();
-  const extension = localUri.split('.').pop()?.toLowerCase() ?? 'jpg';
-  const contentType = extension === 'jpg' ? 'image/jpeg' : `image/${extension}`;
-  const path = `${userId}/${Date.now()}.${extension}`;
-
-  const { error: uploadError } = await supabase.storage
-    .from('chat-media')
-    .upload(path, bytes, { contentType });
-  if (uploadError) throw uploadError;
-
-  const { data: publicUrlData } = supabase.storage.from('chat-media').getPublicUrl(path);
-
-  const { error: insertError } = await supabase
-    .from('chat_messages')
-    .insert({ user_id: userId, user_name: userName, image_url: publicUrlData.publicUrl });
-  if (insertError) throw insertError;
-}
-
-export function subscribeToMessages(currentUserId: string, onInsert: (message: ChatMessage) => void) {
+export function subscribeToMessages(
+  currentUserId: string,
+  currentUserName: string,
+  onInsert: (message: ChatMessage) => void
+) {
   const channel = supabase
-    .channel('chat_messages-changes')
+    .channel('messages-feed')
     .on(
       'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'chat_messages' },
+      { event: 'INSERT', schema: 'public', table: 'messages' },
       (payload) => {
-        const row = payload.new as ChatMessageRow;
-        if (row.user_id === currentUserId) return; // already rendered optimistically
-        onInsert(mapMessageRow(row, currentUserId));
+        const row = payload.new as MessageRow;
+        onInsert(mapMessageRow(row, currentUserId, currentUserName));
       }
     )
     .subscribe();

@@ -1,4 +1,3 @@
-import * as ImagePicker from 'expo-image-picker';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -18,7 +17,7 @@ import { ChatBubble } from '@/components/chat/ChatBubble';
 import { ChatComposer } from '@/components/chat/ChatComposer';
 import { GymRatsTheme } from '@/constants/GymRatsTheme';
 import { useAuth } from '@/lib/auth/AuthProvider';
-import { fetchMessages, getDisplayName, sendImageMessage, sendTextMessage, subscribeToMessages } from '@/lib/chat/api';
+import { fetchMessages, getDisplayName, sendTextMessage, subscribeToMessages } from '@/lib/chat/api';
 import type { ChatMessage } from '@/types/chat';
 
 export default function ChatRoomScreen() {
@@ -28,11 +27,16 @@ export default function ChatRoomScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const listRef = useRef<FlatList<ChatMessage>>(null);
 
+  const appendMessage = useCallback((message: ChatMessage) => {
+    setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
+  }, []);
+
   useEffect(() => {
     if (!user) return;
+    const userName = getDisplayName(user);
 
     let isMounted = true;
-    fetchMessages(user.id)
+    fetchMessages(user.id, userName)
       .then((data) => {
         if (isMounted) setMessages(data);
       })
@@ -43,92 +47,26 @@ export default function ChatRoomScreen() {
         if (isMounted) setIsLoading(false);
       });
 
-    const unsubscribe = subscribeToMessages(user.id, (message) => {
-      setMessages((prev) => [...prev, message]);
-    });
+    const unsubscribe = subscribeToMessages(user.id, userName, appendMessage);
 
     return () => {
       isMounted = false;
       unsubscribe();
     };
-  }, [user]);
+  }, [user, appendMessage]);
 
   const scrollToEnd = useCallback(() => {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }, []);
 
   const handleSendText = async (text: string) => {
-    if (!user) return;
-    const userName = getDisplayName(user);
-    const tempId = `optimistic-${Date.now()}`;
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: tempId,
-        senderId: user.id,
-        senderName: userName,
-        content: text,
-        imageUrl: null,
-        createdAt: new Date().toISOString(),
-        isMine: true,
-      },
-    ]);
-    scrollToEnd();
     try {
-      await sendTextMessage(user.id, userName, text);
+      await sendTextMessage(text);
+      scrollToEnd();
     } catch (error) {
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
       Alert.alert('Não foi possível enviar a mensagem', error instanceof Error ? error.message : undefined);
+      throw error;
     }
-  };
-
-  const handleSendImage = async (localUri: string) => {
-    if (!user) return;
-    const userName = getDisplayName(user);
-    const tempId = `optimistic-${Date.now()}`;
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: tempId,
-        senderId: user.id,
-        senderName: userName,
-        content: null,
-        imageUrl: localUri,
-        createdAt: new Date().toISOString(),
-        isMine: true,
-      },
-    ]);
-    scrollToEnd();
-    try {
-      await sendImageMessage(user.id, userName, localUri);
-    } catch (error) {
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      Alert.alert('Não foi possível enviar a foto', error instanceof Error ? error.message : undefined);
-    }
-  };
-
-  const handleCheckIn = () => {
-    Alert.alert('Partilhar check-in', 'Escolhe uma foto do treino de hoje', [
-      { text: 'Câmara', onPress: () => pickCheckInPhoto('camera') },
-      { text: 'Galeria', onPress: () => pickCheckInPhoto('library') },
-      { text: 'Cancelar', style: 'cancel' },
-    ]);
-  };
-
-  const pickCheckInPhoto = async (source: 'camera' | 'library') => {
-    const permission =
-      source === 'camera'
-        ? await ImagePicker.requestCameraPermissionsAsync()
-        : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
-
-    const result =
-      source === 'camera'
-        ? await ImagePicker.launchCameraAsync({ quality: 0.7 })
-        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
-
-    if (result.canceled || !result.assets[0]) return;
-    handleSendImage(result.assets[0].uri);
   };
 
   return (
@@ -138,22 +76,13 @@ export default function ChatRoomScreen() {
           <Text style={styles.title}>Gym Rats</Text>
           <Text style={styles.subtitle}>Sala da equipa de treino</Text>
         </View>
-        <View style={styles.headerActions}>
-          <Pressable style={styles.iconButton} onPress={handleCheckIn}>
-            <SymbolView
-              name={{ ios: 'checkmark.seal.fill', android: 'verified', web: 'verified' }}
-              tintColor={GymRatsTheme.accentAlt}
-              size={18}
-            />
-          </Pressable>
-          <Pressable style={styles.iconButton} onPress={signOut}>
-            <SymbolView
-              name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }}
-              tintColor={GymRatsTheme.textSecondary}
-              size={18}
-            />
-          </Pressable>
-        </View>
+        <Pressable style={styles.iconButton} onPress={signOut}>
+          <SymbolView
+            name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }}
+            tintColor={GymRatsTheme.textSecondary}
+            size={18}
+          />
+        </Pressable>
       </View>
 
       <KeyboardAvoidingView
@@ -179,7 +108,7 @@ export default function ChatRoomScreen() {
           />
         )}
 
-        <ChatComposer onSendText={handleSendText} onSendImage={handleSendImage} />
+        <ChatComposer onSendText={handleSendText} />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -209,10 +138,6 @@ const styles = StyleSheet.create({
     color: GymRatsTheme.textSecondary,
     fontSize: 12,
     marginTop: 2,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 8,
   },
   iconButton: {
     width: 36,

@@ -1,4 +1,3 @@
-import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
@@ -7,43 +6,21 @@ import { GymRatsTheme } from '@/constants/GymRatsTheme';
 
 type Props = {
   onSendText: (text: string) => Promise<void>;
-  onSendImage: (localUri: string) => Promise<void>;
 };
 
-export function ChatComposer({ onSendText, onSendImage }: Props) {
+export function ChatComposer({ onSendText }: Props) {
   const [text, setText] = useState('');
   const [isSending, setIsSending] = useState(false);
 
   const handleSendText = async () => {
     const value = text.trim();
     if (!value || isSending) return;
-    setText('');
     setIsSending(true);
     try {
       await onSendText(value);
-    } finally {
-      setIsSending(false);
-    }
-  };
-
-  const handlePickImage = async (source: 'camera' | 'library') => {
-    if (isSending) return;
-    const permission =
-      source === 'camera'
-        ? await ImagePicker.requestCameraPermissionsAsync()
-        : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
-
-    const result =
-      source === 'camera'
-        ? await ImagePicker.launchCameraAsync({ quality: 0.7 })
-        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
-
-    if (result.canceled || !result.assets[0]) return;
-
-    setIsSending(true);
-    try {
-      await onSendImage(result.assets[0].uri);
+      setText('');
+    } catch {
+      // The caller already surfaced an alert; keep the text so the user can retry.
     } finally {
       setIsSending(false);
     }
@@ -51,26 +28,6 @@ export function ChatComposer({ onSendText, onSendImage }: Props) {
 
   return (
     <View style={styles.container}>
-      <Pressable
-        style={styles.iconButton}
-        disabled={isSending}
-        onPress={() => handlePickImage('camera')}>
-        <SymbolView
-          name={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }}
-          tintColor={GymRatsTheme.textPrimary}
-          size={22}
-        />
-      </Pressable>
-      <Pressable
-        style={styles.iconButton}
-        disabled={isSending}
-        onPress={() => handlePickImage('library')}>
-        <SymbolView
-          name={{ ios: 'photo.on.rectangle', android: 'photo_library', web: 'photo_library' }}
-          tintColor={GymRatsTheme.textPrimary}
-          size={22}
-        />
-      </Pressable>
       <TextInput
         style={styles.input}
         value={text}
@@ -108,14 +65,6 @@ const styles = StyleSheet.create({
     backgroundColor: GymRatsTheme.surface,
     borderTopWidth: 1,
     borderTopColor: GymRatsTheme.border,
-  },
-  iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: GymRatsTheme.surfaceAlt,
   },
   input: {
     flex: 1,
