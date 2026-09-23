@@ -1,11 +1,12 @@
 import * as ImagePicker from 'expo-image-picker';
 import { SymbolView } from 'expo-symbols';
-import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -13,46 +14,100 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ConversationListItem } from '@/components/chat/ConversationListItem';
-import { NewChatFab } from '@/components/chat/NewChatFab';
+import { ChatBubble } from '@/components/chat/ChatBubble';
+import { ChatComposer } from '@/components/chat/ChatComposer';
 import { GymRatsTheme } from '@/constants/GymRatsTheme';
-import { fetchConversations } from '@/lib/chat/api';
 import { useAuth } from '@/lib/auth/AuthProvider';
-import type { ConversationSummary } from '@/types/chat';
+import { fetchMessages, getDisplayName, sendImageMessage, sendTextMessage, subscribeToMessages } from '@/lib/chat/api';
+import type { ChatMessage } from '@/types/chat';
 
-export default function ChatHubScreen() {
+export default function ChatRoomScreen() {
   const { session, signOut } = useAuth();
-  const userId = session?.user.id;
-  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const user = session?.user;
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const listRef = useRef<FlatList<ChatMessage>>(null);
 
-  const loadConversations = useCallback(async () => {
-    if (!userId) return;
+  useEffect(() => {
+    if (!user) return;
+
+    let isMounted = true;
+    fetchMessages(user.id)
+      .then((data) => {
+        if (isMounted) setMessages(data);
+      })
+      .catch((error) => {
+        Alert.alert('Não foi possível carregar as mensagens', error instanceof Error ? error.message : undefined);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    const unsubscribe = subscribeToMessages(user.id, (message) => {
+      setMessages((prev) => [...prev, message]);
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, [user]);
+
+  const scrollToEnd = useCallback(() => {
+    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+  }, []);
+
+  const handleSendText = async (text: string) => {
+    if (!user) return;
+    const userName = getDisplayName(user);
+    const tempId = `optimistic-${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: tempId,
+        senderId: user.id,
+        senderName: userName,
+        content: text,
+        imageUrl: null,
+        createdAt: new Date().toISOString(),
+        isMine: true,
+      },
+    ]);
+    scrollToEnd();
     try {
-      const data = await fetchConversations(userId);
-      setConversations(data);
+      await sendTextMessage(user.id, userName, text);
     } catch (error) {
-      Alert.alert('Não foi possível carregar as conversas', error instanceof Error ? error.message : undefined);
-    } finally {
-      setIsLoading(false);
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      Alert.alert('Não foi possível enviar a mensagem', error instanceof Error ? error.message : undefined);
     }
-  }, [userId]);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadConversations();
-    }, [loadConversations])
-  );
-
-  const openConversation = (conversation: ConversationSummary) => {
-    router.push({ pathname: '/chat/[id]', params: { id: conversation.id, name: conversation.name } });
   };
 
-  const handleNewConversation = () => {
-    router.push('/chat/new');
+  const handleSendImage = async (localUri: string) => {
+    if (!user) return;
+    const userName = getDisplayName(user);
+    const tempId = `optimistic-${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: tempId,
+        senderId: user.id,
+        senderName: userName,
+        content: null,
+        imageUrl: localUri,
+        createdAt: new Date().toISOString(),
+        isMine: true,
+      },
+    ]);
+    scrollToEnd();
+    try {
+      await sendImageMessage(user.id, userName, localUri);
+    } catch (error) {
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      Alert.alert('Não foi possível enviar a foto', error instanceof Error ? error.message : undefined);
+    }
   };
 
-  const handleShareCheckIn = () => {
+  const handleCheckIn = () => {
     Alert.alert('Partilhar check-in', 'Escolhe uma foto do treino de hoje', [
       { text: 'Câmara', onPress: () => pickCheckInPhoto('camera') },
       { text: 'Galeria', onPress: () => pickCheckInPhoto('library') },
@@ -73,46 +128,59 @@ export default function ChatHubScreen() {
         : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
 
     if (result.canceled || !result.assets[0]) return;
-
-    router.push({ pathname: '/chat/new', params: { checkinUri: result.assets[0].uri } });
+    handleSendImage(result.assets[0].uri);
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Gym Rats</Text>
-          <Text style={styles.subtitle}>A tua equipa de treino</Text>
+          <Text style={styles.subtitle}>Sala da equipa de treino</Text>
         </View>
-        <Pressable style={styles.signOutButton} onPress={signOut}>
-          <SymbolView
-            name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }}
-            tintColor={GymRatsTheme.textSecondary}
-            size={20}
-          />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable style={styles.iconButton} onPress={handleCheckIn}>
+            <SymbolView
+              name={{ ios: 'checkmark.seal.fill', android: 'verified', web: 'verified' }}
+              tintColor={GymRatsTheme.accentAlt}
+              size={18}
+            />
+          </Pressable>
+          <Pressable style={styles.iconButton} onPress={signOut}>
+            <SymbolView
+              name={{ ios: 'rectangle.portrait.and.arrow.right', android: 'logout', web: 'logout' }}
+              tintColor={GymRatsTheme.textSecondary}
+              size={18}
+            />
+          </Pressable>
+        </View>
       </View>
 
-      {isLoading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator color={GymRatsTheme.accent} />
-        </View>
-      ) : conversations.length === 0 ? (
-        <View style={styles.centered}>
-          <Text style={styles.emptyText}>Ainda não tens conversas.{'\n'}Toca em + para começar.</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={conversations}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <ConversationListItem conversation={item} onPress={() => openConversation(item)} />
-          )}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
-        />
-      )}
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
+        {isLoading ? (
+          <View style={styles.centered}>
+            <ActivityIndicator color={GymRatsTheme.accent} />
+          </View>
+        ) : messages.length === 0 ? (
+          <View style={styles.centered}>
+            <Text style={styles.emptyText}>Ainda não há mensagens.{'\n'}Diz olá à equipa 👋</Text>
+          </View>
+        ) : (
+          <FlatList
+            ref={listRef}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => <ChatBubble message={item} />}
+            contentContainerStyle={styles.messagesContent}
+            onContentSizeChange={scrollToEnd}
+          />
+        )}
 
-      <NewChatFab onNewConversation={handleNewConversation} onShareCheckIn={handleShareCheckIn} />
+        <ChatComposer onSendText={handleSendText} onSendImage={handleSendImage} />
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -121,6 +189,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: GymRatsTheme.background,
+  },
+  flex: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -131,15 +202,19 @@ const styles = StyleSheet.create({
   },
   title: {
     color: GymRatsTheme.textPrimary,
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '800',
   },
   subtitle: {
     color: GymRatsTheme.textSecondary,
-    fontSize: 13,
+    fontSize: 12,
     marginTop: 2,
   },
-  signOutButton: {
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  iconButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
@@ -159,9 +234,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
   },
-  separator: {
-    height: 1,
-    backgroundColor: GymRatsTheme.border,
-    marginLeft: 76,
+  messagesContent: {
+    paddingVertical: 12,
   },
 });
